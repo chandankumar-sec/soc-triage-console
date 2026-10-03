@@ -1,0 +1,380 @@
+<title>SOC Triage Console</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: slim rail + sticky status bar; the alert queue is the working surface, ATT&CK matrix shows coverage across tactics. */
+:root{
+  --bg:#eef1f5; --panel:#ffffff; --panel2:#f3f6f9; --line:#d9dfe7; --fg:#0f1b29; --muted:#5d6c7d;
+  --accent:#1f5fd1; --accent-fg:#ffffff; --accent-soft:#e3ecfb;
+  --crit:#c0302a; --crit-bg:#fbe7e5; --warn:#935400; --warn-bg:#fbeed6; --info:#1f5fd1; --info-bg:#e3ecfb; --ok:#1c7a43;
+  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif; --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0a0e13; --panel:#10161d; --panel2:#161e27; --line:#202b38; --fg:#dde5ee; --muted:#7f90a3;
+  --accent:#5b9dff; --accent-fg:#06121f; --accent-soft:#14233a;
+  --crit:#ff6b63; --crit-bg:#341a1c; --warn:#f0a93b; --warn-bg:#30250e; --info:#5b9dff; --info-bg:#14233a; --ok:#58cf8a; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0a0e13; --panel:#10161d; --panel2:#161e27; --line:#202b38; --fg:#dde5ee; --muted:#7f90a3;
+  --accent:#5b9dff; --accent-fg:#06121f; --accent-soft:#14233a;
+  --crit:#ff6b63; --crit-bg:#341a1c; --warn:#f0a93b; --warn-bg:#30250e; --info:#5b9dff; --info-bg:#14233a; --ok:#58cf8a; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font:14px/1.5 var(--sans);margin:0;-webkit-font-smoothing:antialiased}
+button,input,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.mono{font-family:var(--mono);font-size:12.5px;font-variant-numeric:tabular-nums}
+.app{display:grid;grid-template-columns:208px minmax(0,1fr);min-height:100vh}
+.rail{background:var(--panel);border-right:1px solid var(--line);padding:16px 10px;display:flex;flex-direction:column;gap:22px;position:sticky;top:0;height:100vh;align-self:start}
+.brand{display:flex;gap:10px;align-items:center;padding:2px 8px}
+.brand b{font-weight:600;display:block;line-height:1.15;font-size:13.5px}
+.brand span{font:10.5px var(--mono);color:var(--muted);letter-spacing:.04em}
+.navlabel{font:10.5px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--muted);padding:0 10px 4px}
+nav{display:flex;flex-direction:column;gap:1px}
+nav button{display:flex;justify-content:space-between;align-items:center;gap:8px;width:100%;text-align:left;background:none;border:0;border-radius:4px;padding:7px 10px;cursor:pointer;color:var(--muted);transition:background .15s,color .15s}
+nav button:hover{background:var(--panel2);color:var(--fg)}
+nav button[aria-selected="true"]{background:var(--accent-soft);color:var(--accent);font-weight:500}
+.count{font:11px var(--mono);color:inherit;opacity:.85}
+.railfoot{margin-top:auto;font-size:11.5px;color:var(--muted);padding:0 8px;line-height:1.45}
+.wrap{min-width:0;display:flex;flex-direction:column}
+.topbar{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px clamp(16px,3vw,32px);background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+.crumb{color:var(--muted);font-size:13px}.crumb b{color:var(--fg);font-weight:500}
+.tools{display:flex;align-items:center;gap:14px}
+.live{display:flex;align-items:center;gap:7px;font:11.5px var(--mono);color:var(--muted)}
+.live i{width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 0 var(--ok);animation:ping 2.2s infinite}
+@keyframes ping{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--ok) 55%,transparent)}70%,100%{box-shadow:0 0 0 7px transparent}}
+.themebtn{background:none;border:1px solid var(--line);border-radius:4px;padding:3px 10px;cursor:pointer;font-size:12px;color:var(--muted)}
+.themebtn:hover{color:var(--fg);border-color:var(--muted)}
+main{padding:22px clamp(16px,3vw,32px) 40px;min-width:0;display:flex;flex-direction:column;gap:18px}
+h1{font-size:19px;font-weight:600;margin:0;letter-spacing:-.005em}
+.sub{color:var(--muted);margin:2px 0 0;max-width:72ch;font-size:13px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.kpi{background:var(--panel);padding:13px 16px;display:flex;flex-direction:column;gap:2px}
+.kpi small{color:var(--muted);font:10.5px var(--mono);letter-spacing:.09em;text-transform:uppercase}
+.kpi strong{font:500 28px/1.15 var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.kpi.crit strong{color:var(--crit)}.kpi.warn strong{color:var(--warn)}
+.grid2{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(0,1fr);gap:18px;align-items:start}
+.col{display:flex;flex-direction:column;gap:18px;min-width:0}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:6px;min-width:0;position:relative;overflow:hidden}
+.panel>h2{font:500 11px var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin:0;padding:11px 14px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:8px;align-items:center}
+.panel>h2 .note{text-transform:none;letter-spacing:0;font:11.5px var(--sans)}
+.scanbar{position:absolute;left:0;top:0;height:2px;width:35%;background:linear-gradient(90deg,transparent,var(--accent),transparent);opacity:0}
+.scanning .scanbar{opacity:1;animation:scan .7s linear infinite}
+@keyframes scan{from{transform:translateX(-100%)}to{transform:translateX(300%)}}
+.scanning table{opacity:.45;transition:opacity .2s}
+.filters{display:flex;gap:8px;padding:10px 14px;border-bottom:1px solid var(--line);flex-wrap:wrap;align-items:center}
+.seg{display:flex;border:1px solid var(--line);border-radius:4px;overflow:hidden}
+.seg button{background:none;border:0;padding:4px 11px;cursor:pointer;color:var(--muted);font-size:12.5px;border-right:1px solid var(--line)}
+.seg button:last-child{border-right:0}
+.seg button[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent);font-weight:500}
+.search{flex:1;min-width:140px;background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:4px 10px;font-size:12.5px}
+.search::placeholder{color:var(--muted)}
+.tablewrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;min-width:540px}
+th{font:500 10.5px var(--mono);text-transform:uppercase;letter-spacing:.08em;color:var(--muted);text-align:left;padding:8px 14px;border-bottom:1px solid var(--line);white-space:nowrap;background:var(--panel)}
+td{font-size:13px;padding:9px 14px;border-bottom:1px solid var(--line);vertical-align:middle}
+tr:last-child td{border-bottom:0}
+tr.row{cursor:pointer;transition:background .12s}
+tr.row:hover td{background:var(--panel2)}
+tr.row[aria-selected="true"] td{background:var(--accent-soft)}
+tr.row[aria-selected="true"] td:first-child{box-shadow:inset 2px 0 0 var(--accent)}
+.anim tr.row{animation:rowin .38s cubic-bezier(.2,.7,.2,1) both;animation-delay:calc(var(--i)*28ms)}
+@keyframes rowin{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+.sev{display:inline-flex;align-items:center;gap:6px;font:500 11px var(--mono);letter-spacing:.05em}
+.sev i{width:7px;height:7px;border-radius:50%;background:currentColor}
+.sev.HIGH{color:var(--crit)}.sev.MEDIUM{color:var(--warn)}.sev.LOW{color:var(--info)}
+.sev.HIGH i{animation:ping2 1.8s infinite}
+@keyframes ping2{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--crit) 60%,transparent)}70%,100%{box-shadow:0 0 0 6px transparent}}
+.chip{font:11px var(--mono);border:1px solid var(--line);border-radius:3px;padding:0 6px;color:var(--muted);white-space:nowrap}
+.srcdot{font:11px var(--mono);color:var(--muted)}
+.empty{padding:30px 14px;color:var(--muted);text-align:center;font-size:13px}
+.detail{padding:14px;display:flex;flex-direction:column;gap:14px;animation:fadein .28s ease both}
+@keyframes fadein{from{opacity:0;transform:translateX(6px)}to{opacity:1;transform:none}}
+.detail h3{margin:6px 0 0;font-size:16px;font-weight:600}
+.detail dl{margin:0;display:grid;grid-template-columns:78px minmax(0,1fr);gap:7px 10px;font-size:13px}
+.detail dt{color:var(--muted);font:11px var(--mono);letter-spacing:.06em;text-transform:uppercase;padding-top:2px}.detail dd{margin:0;overflow-wrap:anywhere}
+.steps{margin:6px 0 0;padding-left:20px;display:flex;flex-direction:column;gap:5px;font-size:13px}
+.steps li::marker{color:var(--accent);font-family:var(--mono)}
+.lbl{font:500 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.callout{border:1px dashed var(--line);border-radius:4px;padding:9px 12px;font-size:12px;color:var(--muted)}
+.donutbox{display:flex;align-items:center;gap:18px;padding:14px;flex-wrap:wrap}
+.donut{position:relative;width:128px;height:128px;flex:none}
+.donut svg{width:100%;height:100%;transform:rotate(-90deg)}
+.donut circle{fill:none;stroke-width:11}
+.donut .seg1{transition:stroke-dasharray 1s cubic-bezier(.2,.7,.2,1)}
+.donut .mid{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.donut .mid b{font:500 26px/1 var(--mono)}.donut .mid span{font:10px var(--mono);color:var(--muted);letter-spacing:.1em;text-transform:uppercase;margin-top:3px}
+.legend{display:flex;flex-direction:column;gap:7px;font-size:13px;min-width:0}
+.legend div{display:flex;align-items:center;gap:8px}.legend i{width:9px;height:9px;border-radius:2px}
+.legend b{margin-left:auto;font:500 13px var(--mono);padding-left:18px}
+.matrix{display:grid;grid-template-columns:repeat(8,minmax(118px,1fr));gap:1px;background:var(--line);overflow-x:auto}
+.tac{background:var(--panel);display:flex;flex-direction:column;min-width:0}
+.tac h4{margin:0;padding:8px 10px;font:500 10.5px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);background:var(--panel2);border-bottom:1px solid var(--line);white-space:nowrap}
+.tech{padding:8px 10px;border-bottom:1px solid var(--line);font-size:11.5px;color:var(--muted);opacity:.6;line-height:1.3}
+.tech b{display:block;font:500 11.5px var(--mono);color:inherit}
+.tech.on{opacity:1;color:var(--fg);animation:pop .5s cubic-bezier(.2,.7,.2,1) both;animation-delay:calc(var(--i)*60ms + 250ms)}
+.tech.on.HIGH{background:var(--crit-bg);box-shadow:inset 2px 0 0 var(--crit)}
+.tech.on.MEDIUM{background:var(--warn-bg);box-shadow:inset 2px 0 0 var(--warn)}
+.tech.on b{color:var(--fg)}
+@keyframes pop{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:none}}
+.editor{padding:12px 14px;display:flex;flex-direction:column;gap:10px}
+textarea{width:100%;min-height:150px;resize:vertical;background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:10px;font:12px/1.55 var(--mono);white-space:pre;overflow:auto}
+.btns{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.btn{background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:5px 14px;cursor:pointer;transition:border-color .15s}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--accent);color:var(--accent-fg);border-color:var(--accent);font-weight:500}
+.btn.primary:hover{filter:brightness(1.08)}
+.err{color:var(--crit);font:12px var(--mono)}
+.note{font-size:12px;color:var(--muted)}
+.view{animation:viewin .35s ease both}
+@keyframes viewin{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@media (max-width:900px){
+  .app{grid-template-columns:minmax(0,1fr)}
+  .rail{position:static;height:auto;flex-direction:row;flex-wrap:wrap;align-items:center;padding:10px 16px;gap:8px 16px}
+  nav{flex-direction:row;flex-wrap:wrap}.navlabel,.railfoot{display:none}
+  .grid2{grid-template-columns:minmax(0,1fr)}
+  .live{display:none}
+}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+</style>
+
+<div class="app">
+  <aside class="rail">
+    <div class="brand">
+      <svg width="28" height="28" viewBox="0 0 32 32" aria-hidden="true"><rect x="2.500" y="2.500" width="27" height="27" rx="5" fill="none" stroke="var(--accent)" stroke-width="2"/><path d="M7 17h5l2.500-7 4 12 2.500-5h4" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <div><b>Triage Console</b><span>L1 · LAB DATA</span></div>
+    </div>
+    <div><div class="navlabel">Workspace</div><nav id="nav" role="tablist" aria-label="Views"></nav></div>
+    <div class="railfoot">Runs in your browser. Logs are never uploaded.</div>
+  </aside>
+  <div class="wrap">
+    <div class="topbar"><div class="crumb">Console / <b id="crumb"></b></div>
+      <div class="tools"><span class="live"><i></i>Detections online</span><span class="mono" id="clock" style="color:var(--muted)"></span><button class="themebtn" id="themebtn" type="button">Theme</button></div></div>
+    <main id="main"></main>
+  </div>
+</div>
+
+<script>
+const SAMPLES = {"network": "ts,src,dst,dport,bytes\n1789999999.30,10.0.0.15,203.0.113.77,443,312\n1790000027.16,10.0.0.22,192.0.2.11,443,33061\n1790000058.60,10.0.0.15,203.0.113.77,443,312\n1790000098.34,10.0.0.22,198.51.100.5,443,32494\n1790000102.18,10.0.0.22,192.0.2.11,443,69338\n1790000120.60,10.0.0.15,203.0.113.77,443,312\n1790000132.94,10.0.0.22,192.0.2.11,443,59329\n1790000148.22,10.0.0.22,192.0.2.10,443,15975\n1790000178.29,10.0.0.15,203.0.113.77,443,312\n1790000180.50,10.0.0.22,192.0.2.10,443,45333\n1790000187.92,10.0.0.22,192.0.2.11,443,55772\n1790000189.72,10.0.0.22,198.51.100.5,443,10673\n1790000240.14,10.0.0.15,203.0.113.77,443,312\n1790000254.80,10.0.0.22,198.51.100.5,443,41623\n1790000273.51,10.0.0.22,192.0.2.11,443,78405\n1790000299.46,10.0.0.15,203.0.113.77,443,312\n1790000304.40,10.0.0.22,192.0.2.11,443,9512\n1790000358.23,10.0.0.15,203.0.113.77,443,312\n1790000386.86,10.0.0.22,192.0.2.11,443,62641\n1790000420.03,10.0.0.15,203.0.113.77,443,312\n1790000440.60,10.0.0.22,192.0.2.10,443,8452\n1790000478.15,10.0.0.15,203.0.113.77,443,312\n1790000499.71,10.0.0.22,192.0.2.11,443,85320\n1790000538.53,10.0.0.22,198.51.100.5,443,58911\n1790000539.73,10.0.0.15,203.0.113.77,443,312\n1790000553.60,10.0.0.22,192.0.2.11,443,88141\n1790000572.78,10.0.0.22,192.0.2.11,443,47091\n1790000581.06,10.0.0.22,192.0.2.10,443,65209\n1790000583.79,10.0.0.22,192.0.2.11,443,17452\n1790000598.28,10.0.0.15,203.0.113.77,443,312\n1790000644.13,10.0.0.22,192.0.2.11,443,51742\n1790000658.36,10.0.0.15,203.0.113.77,443,312\n1790000719.70,10.0.0.15,203.0.113.77,443,312\n1790000756.03,10.0.0.22,192.0.2.11,443,11061\n1790000764.22,10.0.0.22,192.0.2.11,443,72516\n1790000778.87,10.0.0.22,192.0.2.10,443,56929\n1790000781.31,10.0.0.15,203.0.113.77,443,312\n1790000838.50,10.0.0.15,203.0.113.77,443,312\n1790000868.64,10.0.0.22,192.0.2.11,443,54933\n1790000898.89,10.0.0.15,203.0.113.77,443,312\n1790000960.51,10.0.0.15,203.0.113.77,443,312\n1790001021.79,10.0.0.15,203.0.113.77,443,312\n1790001062.26,10.0.0.22,198.51.100.5,443,50365\n1790001080.31,10.0.0.15,203.0.113.77,443,312\n1790001139.59,10.0.0.15,203.0.113.77,443,312\n1790001201.91,10.0.0.15,203.0.113.77,443,312\n1790001204.62,10.0.0.22,192.0.2.10,443,11376\n1790001213.35,10.0.0.22,192.0.2.10,443,86813\n1790001225.30,10.0.0.22,192.0.2.11,443,77717\n1790001234.36,10.0.0.22,192.0.2.11,443,1036\n1790001241.45,10.0.0.22,198.51.100.5,443,48898\n1790001258.19,10.0.0.15,203.0.113.77,443,312\n1790001283.80,10.0.0.22,192.0.2.11,443,16948\n1790001321.43,10.0.0.15,203.0.113.77,443,312\n1790001336.57,10.0.0.22,198.51.100.5,443,81449\n1790001379.16,10.0.0.15,203.0.113.77,443,312\n1790001384.46,10.0.0.22,198.51.100.5,443,7576\n1790001411.91,10.0.0.22,198.51.100.5,443,73804\n1790001434.33,10.0.0.22,192.0.2.11,443,52158\n1790001438.58,10.0.0.15,203.0.113.77,443,312\n1790001439.25,10.0.0.22,198.51.100.5,443,52986\n1790001442.14,10.0.0.22,192.0.2.10,443,27863\n1790001468.28,10.0.0.22,192.0.2.10,443,45071\n1790001498.47,10.0.0.15,203.0.113.77,443,312\n1790001509.60,10.0.0.22,192.0.2.10,443,530\n1790001547.24,10.0.0.22,198.51.100.5,443,13799\n1790001559.23,10.0.0.15,203.0.113.77,443,312\n1790001621.26,10.0.0.15,203.0.113.77,443,312\n1790001678.72,10.0.0.15,203.0.113.77,443,312\n1790001681.11,10.0.0.22,198.51.100.5,443,3842\n1790001684.39,10.0.0.22,192.0.2.10,443,80987\n1790001705.63,10.0.0.22,198.51.100.5,443,33563\n1790001740.33,10.0.0.15,203.0.113.77,443,312\n1790001800.56,10.0.0.15,203.0.113.77,443,312\n1790001845.65,10.0.0.22,198.51.100.5,443,48231\n1790001859.49,10.0.0.15,203.0.113.77,443,312\n1790001874.57,10.0.0.22,192.0.2.10,443,64472\n1790001920.19,10.0.0.15,203.0.113.77,443,312\n1790001978.25,10.0.0.15,203.0.113.77,443,312\n1790002038.24,10.0.0.15,203.0.113.77,443,312\n1790002098.52,10.0.0.22,192.0.2.11,443,63466\n1790002098.82,10.0.0.15,203.0.113.77,443,312\n1790002128.28,10.0.0.22,192.0.2.10,443,19389\n1790002133.13,10.0.0.22,192.0.2.11,443,35202\n1790002160.72,10.0.0.15,203.0.113.77,443,312\n1790002162.44,10.0.0.22,198.51.100.5,443,21660\n1790002195.13,10.0.0.22,192.0.2.10,443,69739\n1790002215.33,10.0.0.22,198.51.100.5,443,71694\n1790002219.71,10.0.0.15,203.0.113.77,443,312\n1790002279.26,10.0.0.15,203.0.113.77,443,312\n1790002325.81,10.0.0.22,198.51.100.5,443,39571\n1790002340.34,10.0.0.15,203.0.113.77,443,312\n1790002498.60,10.0.0.22,192.0.2.10,443,34724\n1790002531.48,10.0.0.22,192.0.2.10,443,47121\n1790002598.00,10.0.0.22,198.51.100.5,443,71484\n1790002665.94,10.0.0.22,192.0.2.11,443,83919\n1790002677.30,10.0.0.22,192.0.2.10,443,31877\n1790002754.05,10.0.0.22,198.51.100.5,443,30219\n1790002764.08,10.0.0.22,192.0.2.11,443,47104\n1790002823.17,10.0.0.22,192.0.2.10,443,37123\n# dns\nts,src,query,qtype\n1790000000,10.0.0.15,rw46i6csibmuebfxsiysihsjwhvju.t.badtunnel.example,A\n1790000000,10.0.0.22,www.corp.example,A\n1790000003,10.0.0.15,bawn55dxzmrfqsmdpvzb6kx6z3qo6.t.badtunnel.example,A\n1790000006,10.0.0.15,4xur5opmb7ypzty6pjm532326r47s.t.badtunnel.example,A\n1790000009,10.0.0.15,axdvqxm3ewpbiabyoa4it6bgdijdu.t.badtunnel.example,A\n1790000012,10.0.0.15,oyuvo6g5kvntflpwovlbhucrgshxw.t.badtunnel.example,A\n1790000015,10.0.0.15,uhimfhzei447y5m3pltm2iz2tqtno.t.badtunnel.example,A\n1790000018,10.0.0.15,gqih2abzyw7huq2hyhultejju4ifq.t.badtunnel.example,A\n1790000020,10.0.0.22,mail.corp.example,A\n1790000021,10.0.0.15,3fz3lth7l2skj2ykwqku3c5l2uoks.t.badtunnel.example,A\n1790000024,10.0.0.15,bea3ehuje7t6qbyuo5rxaacfzaslm.t.badtunnel.example,A\n1790000027,10.0.0.15,si2atqfbtaddhek2mb5l4omw4ozs2.t.badtunnel.example,A\n1790000030,10.0.0.15,vw3bk347y4cmurmoy2rptwa7ku2rm.t.badtunnel.example,A\n1790000033,10.0.0.15,4hcqftk24q37emmix34hvaojxbkwk.t.badtunnel.example,A\n1790000036,10.0.0.15,n6yjc5sojhawnzs4js7o2slb6k6rk.t.badtunnel.example,A\n1790000039,10.0.0.15,yjtyzokrzkvcqh24quvy7hb472csa.t.badtunnel.example,A\n1790000040,10.0.0.22,intranet.corp.example,A\n1790000042,10.0.0.15,bfyq2b74z6ysnbtzh6lqsy5e44qxo.t.badtunnel.example,A\n1790000045,10.0.0.15,6tuxntu3kltkp6nnnms66emqtslng.t.badtunnel.example,A\n1790000048,10.0.0.15,7pzyvgewkt27vllun54rtpccvd666.t.badtunnel.example,A\n1790000051,10.0.0.15,sjhliwlp4dusohx4osgf64k4rsecc.t.badtunnel.example,A\n1790000054,10.0.0.15,wjahubobnssqgk5julgcwqum7dz3s.t.badtunnel.example,A\n1790000057,10.0.0.15,iukfdjxzirhrv6idz2dbl7g6x4bo6.t.badtunnel.example,A\n1790000060,10.0.0.15,rdx2ki4jeihg7m4ar36htczk37pdc.t.badtunnel.example,A\n1790000060,10.0.0.22,www.corp.example,A\n1790000063,10.0.0.15,cxux5uynls4n77g6ay3nfgbka54ea.t.badtunnel.example,A\n1790000066,10.0.0.15,rw6hqnwr3t7uvvrfjsaez7mthwamg.t.badtunnel.example,A\n1790000069,10.0.0.15,bw7sbfqcbf2fgmn3mvbo5m22rncgw.t.badtunnel.example,A\n1790000072,10.0.0.15,wtgy3vl3bohccrdqs4h33yhw5bv32.t.badtunnel.example,A\n1790000080,10.0.0.22,docs.corp.example,A\n1790000100,10.0.0.22,www.corp.example,A\n1790000120,10.0.0.22,www.corp.example,A\n1790000140,10.0.0.22,mail.corp.example,A\n1790000160,10.0.0.22,intranet.corp.example,A\n1790000180,10.0.0.22,www.corp.example,A\n1790000200,10.0.0.22,docs.corp.example,A\n1790000220,10.0.0.22,www.corp.example,A\n1790000240,10.0.0.22,www.corp.example,A\n1790000260,10.0.0.22,mail.corp.example,A\n1790000280,10.0.0.22,intranet.corp.example,A\n1790000300,10.0.0.22,www.corp.example,A\n1790000320,10.0.0.22,docs.corp.example,A\n1790000340,10.0.0.22,www.corp.example,A\n1790000360,10.0.0.22,www.corp.example,A\n1790000380,10.0.0.22,mail.corp.example,A\n1790000400,10.0.0.22,intranet.corp.example,A\n1790000420,10.0.0.22,www.corp.example,A\n1790000440,10.0.0.22,docs.corp.example,A\n1790000460,10.0.0.22,www.corp.example,A\n", "web": "192.0.2.30 - - [03/Oct/2026:10:00:00 +0000] \"GET / HTTP/1.1\" 200 512 \"-\" \"Mozilla/5.0\"\n192.0.2.30 - - [03/Oct/2026:10:00:01 +0000] \"GET /products?id=3 HTTP/1.1\" 200 512 \"-\" \"Mozilla/5.0\"\n192.0.2.30 - - [03/Oct/2026:10:00:02 +0000] \"GET /about HTTP/1.1\" 200 512 \"-\" \"Mozilla/5.0\"\n192.0.2.30 - - [03/Oct/2026:10:00:03 +0000] \"GET /search?q=shoes HTTP/1.1\" 200 512 \"-\" \"Mozilla/5.0\"\n198.51.100.20 - - [03/Oct/2026:10:00:04 +0000] \"GET /products?id=1%27%20OR%201%3D1--%20 HTTP/1.1\" 200 512 \"-\" \"Mozilla/5.0\"\n198.51.100.20 - - [03/Oct/2026:10:00:05 +0000] \"GET /products?id=1+UNION+SELECT+username,password+FROM+users HTTP/1.1\" 200 512 \"-\" \"Mozilla/5.0\"\n198.51.100.21 - - [03/Oct/2026:10:00:06 +0000] \"GET /search?q=%3Cscript%3Ealert(1)%3C/script%3E HTTP/1.1\" 200 512 \"-\" \"Mozilla/5.0\"\n198.51.100.22 - - [03/Oct/2026:10:00:07 +0000] \"GET /download?file=../../../../etc/passwd HTTP/1.1\" 404 512 \"-\" \"Mozilla/5.0\"\n198.51.100.22 - - [03/Oct/2026:10:00:08 +0000] \"GET /download?file=%252e%252e%252f%252e%252e%252fetc/passwd HTTP/1.1\" 404 512 \"-\" \"Mozilla/5.0\"\n198.51.100.23 - - [03/Oct/2026:10:00:09 +0000] \"GET /ping?host=8.8.8.8;cat /etc/shadow HTTP/1.1\" 200 512 \"-\" \"Mozilla/5.0\"\n203.0.113.9 - - [03/Oct/2026:10:00:10 +0000] \"GET /admin0.php HTTP/1.1\" 404 512 \"-\" \"gobuster/3.6\"\n203.0.113.9 - - [03/Oct/2026:10:00:11 +0000] \"GET /admin1.php HTTP/1.1\" 404 512 \"-\" \"gobuster/3.6\"\n203.0.113.9 - - [03/Oct/2026:10:00:12 +0000] \"GET /admin2.php HTTP/1.1\" 404 512 \"-\" \"gobuster/3.6\"\n203.0.113.9 - - [03/Oct/2026:10:00:13 +0000] \"GET /admin3.php HTTP/1.1\" 404 512 \"-\" \"gobuster/3.6\"\n203.0.113.9 - - [03/Oct/2026:10:00:14 +0000] \"GET /admin4.php HTTP/1.1\" 404 512 \"-\" \"gobuster/3.6\"\n203.0.113.9 - - [03/Oct/2026:10:00:15 +0000] \"GET /admin5.php HTTP/1.1\" 404 512 \"-\" \"gobuster/3.6\"\n203.0.113.9 - - [03/Oct/2026:10:00:16 +0000] \"GET /admin6.php HTTP/1.1\" 404 512 \"-\" \"gobuster/3.6\"\n203.0.113.9 - - [03/Oct/2026:10:00:17 +0000] \"GET /admin7.php HTTP/1.1\" 404 512 \"-\" \"gobuster/3.6\"\n203.0.113.9 - - [03/Oct/2026:10:00:18 +0000] \"GET /admin8.php HTTP/1.1\" 404 512 \"-\" \"gobuster/3.6\"\n203.0.113.9 - - [03/Oct/2026:10:00:19 +0000] \"GET /admin9.php HTTP/1.1\" 404 512 \"-\" \"gobuster/3.6\"\n203.0.113.9 - - [03/Oct/2026:10:00:20 +0000] \"GET /admin10.php HTTP/1.1\" 404 512 \"-\" \"gobuster/3.6\"\n203.0.113.9 - - [03/Oct/2026:10:00:21 +0000] \"GET /admin11.php HTTP/1.1\" 404 512 \"-\" \"gobuster/3.6\"\n203.0.113.9 - - [03/Oct/2026:10:00:22 +0000] \"GET /admin12.php HTTP/1.1\" 404 512 \"-\" \"gobuster/3.6\"\n203.0.113.9 - - [03/Oct/2026:10:00:23 +0000] \"GET /admin13.php HTTP/1.1\" 404 512 \"-\" \"gobuster/3.6\"\n203.0.113.9 - - [03/Oct/2026:10:00:24 +0000] \"GET /admin14.php HTTP/1.1\" 404 512 \"-\" \"gobuster/3.6\"\n203.0.113.9 - - [03/Oct/2026:10:00:25 +0000] \"GET /admin15.php HTTP/1.1\" 404 512 \"-\" \"gobuster/3.6\"\n203.0.113.9 - - [03/Oct/2026:10:00:26 +0000] \"GET /admin16.php HTTP/1.1\" 404 512 \"-\" \"gobuster/3.6\"\n203.0.113.9 - - [03/Oct/2026:10:00:27 +0000] \"GET /admin17.php HTTP/1.1\" 404 512 \"-\" \"gobuster/3.6\"\n203.0.113.9 - - [03/Oct/2026:10:00:28 +0000] \"GET /admin18.php HTTP/1.1\" 404 512 \"-\" \"gobuster/3.6\"\n203.0.113.9 - - [03/Oct/2026:10:00:29 +0000] \"GET /admin19.php HTTP/1.1\" 404 512 \"-\" \"gobuster/3.6\"\n203.0.113.9 - - [03/Oct/2026:10:00:30 +0000] \"GET /admin20.php HTTP/1.1\" 404 512 \"-\" \"gobuster/3.6\"\n203.0.113.9 - - [03/Oct/2026:10:00:31 +0000] \"GET /admin21.php HTTP/1.1\" 404 512 \"-\" \"gobuster/3.6\"\n203.0.113.9 - - [03/Oct/2026:10:00:32 +0000] \"GET /admin22.php HTTP/1.1\" 404 512 \"-\" \"gobuster/3.6\"\n203.0.113.9 - - [03/Oct/2026:10:00:33 +0000] \"GET /admin23.php HTTP/1.1\" 404 512 \"-\" \"gobuster/3.6\"\n203.0.113.9 - - [03/Oct/2026:10:00:34 +0000] \"GET /admin24.php HTTP/1.1\" 404 512 \"-\" \"gobuster/3.6\"\n203.0.113.10 - - [03/Oct/2026:10:00:35 +0000] \"GET /login HTTP/1.1\" 200 512 \"-\" \"sqlmap/1.7\"\n", "windows": "{\"EventID\": 4624, \"TimeCreated\": \"2026-10-03T08:00:00\", \"TargetUserName\": \"alice\", \"IpAddress\": \"192.0.2.10\", \"LogonType\": 2}\n{\"EventID\": 4625, \"TimeCreated\": \"2026-10-03T08:30:00\", \"TargetUserName\": \"bob\", \"IpAddress\": \"192.0.2.20\", \"LogonType\": 3}\n{\"EventID\": 4625, \"TimeCreated\": \"2026-10-03T09:00:00\", \"TargetUserName\": \"administrator\", \"IpAddress\": \"203.0.113.5\", \"LogonType\": 3}\n{\"EventID\": 4625, \"TimeCreated\": \"2026-10-03T09:00:03\", \"TargetUserName\": \"administrator\", \"IpAddress\": \"203.0.113.5\", \"LogonType\": 3}\n{\"EventID\": 4625, \"TimeCreated\": \"2026-10-03T09:00:06\", \"TargetUserName\": \"administrator\", \"IpAddress\": \"203.0.113.5\", \"LogonType\": 3}\n{\"EventID\": 4625, \"TimeCreated\": \"2026-10-03T09:00:09\", \"TargetUserName\": \"administrator\", \"IpAddress\": \"203.0.113.5\", \"LogonType\": 3}\n{\"EventID\": 4625, \"TimeCreated\": \"2026-10-03T09:00:12\", \"TargetUserName\": \"administrator\", \"IpAddress\": \"203.0.113.5\", \"LogonType\": 3}\n{\"EventID\": 4625, \"TimeCreated\": \"2026-10-03T09:00:15\", \"TargetUserName\": \"administrator\", \"IpAddress\": \"203.0.113.5\", \"LogonType\": 3}\n{\"EventID\": 4625, \"TimeCreated\": \"2026-10-03T09:00:18\", \"TargetUserName\": \"administrator\", \"IpAddress\": \"203.0.113.5\", \"LogonType\": 3}\n{\"EventID\": 4625, \"TimeCreated\": \"2026-10-03T09:00:21\", \"TargetUserName\": \"administrator\", \"IpAddress\": \"203.0.113.5\", \"LogonType\": 3}\n{\"EventID\": 4624, \"TimeCreated\": \"2026-10-03T09:01:00\", \"TargetUserName\": \"administrator\", \"IpAddress\": \"203.0.113.5\", \"LogonType\": 3}\n{\"EventID\": 4720, \"TimeCreated\": \"2026-10-03T09:05:00\", \"TargetUserName\": \"svc_backup\", \"SubjectUserName\": \"administrator\"}\n{\"EventID\": 4732, \"TimeCreated\": \"2026-10-03T09:06:10\", \"MemberName\": \"svc_backup\", \"GroupName\": \"Administrators\"}\n{\"EventID\": 4688, \"TimeCreated\": \"2026-10-03T09:10:00\", \"ParentProcessName\": \"C:\\\\Program Files\\\\Microsoft Office\\\\winword.exe\", \"NewProcessName\": \"C:\\\\Windows\\\\System32\\\\cmd.exe\", \"CommandLine\": \"cmd.exe /c whoami\"}\n{\"EventID\": 4688, \"TimeCreated\": \"2026-10-03T09:10:05\", \"ParentProcessName\": \"C:\\\\Windows\\\\System32\\\\cmd.exe\", \"NewProcessName\": \"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\", \"CommandLine\": \"powershell.exe -enc SQBFAFgAIAAoAE4AZQB3AA==\"}\n{\"EventID\": 1102, \"TimeCreated\": \"2026-10-03T09:20:00\", \"SubjectUserName\": \"administrator\"}\n{\"EventID\": 4688, \"TimeCreated\": \"2026-10-03T09:25:00\", \"ParentProcessName\": \"C:\\\\Windows\\\\explorer.exe\", \"NewProcessName\": \"C:\\\\Windows\\\\notepad.exe\", \"CommandLine\": \"notepad.exe\"}\n"};
+const $ = (s, r=document) => r.querySelector(s);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const REDUCED = matchMedia('(prefers-reduced-motion:reduce)').matches;
+
+/* ---------- Detectors (JS ports of the Python tools in 04, 05, 06) ---------- */
+function entropy(s){const c={};for(const ch of s)c[ch]=(c[ch]||0)+1;return -Object.values(c).reduce((a,n)=>a+n/s.length*Math.log2(n/s.length),0)}
+function csv(text){const [h,...rows]=text.trim().split(/\r?\n/).filter(Boolean).map(l=>l.split(','));return rows.map(r=>Object.fromEntries(h.map((k,i)=>[k.trim(),(r[i]||'').trim()])))}
+function mean(a){return a.reduce((x,y)=>x+y,0)/a.length}
+function pstdev(a){const m=mean(a);return Math.sqrt(mean(a.map(x=>(x-m)**2)))}
+
+function analyzeNetwork(text){
+  const [connText,dnsText]=text.split(/^#\s*dns\s*$/mi);
+  const out=[];
+  const g={};
+  for(const r of csv(connText.replace(/^#.*$/mg,''))){(g[[r.src,r.dst,r.dport]]??=[]).push(+r.ts)}
+  for(const [k,ts] of Object.entries(g)){
+    if(ts.length<10)continue; ts.sort((a,b)=>a-b);
+    const gaps=ts.slice(1).map((t,i)=>t-ts[i]), m=mean(gaps); if(m<1)continue;
+    const cv=pstdev(gaps)/m; if(cv>=0.2)continue;
+    const [src,dst,port]=k.split(',');
+    out.push({src:'network',sev:cv<0.05?'HIGH':'MEDIUM',type:'C2 beaconing',entity:`${src} → ${dst}:${port}`,mitre:'T1071',
+      detail:`${ts.length} connections, one every ~${Math.round(m)}s, timing variation ${cv.toFixed(3)}`})
+  }
+  if(dnsText){
+    const subs={},txt={},tot={};
+    for(const r of csv(dnsText)){
+      const p=r.query.toLowerCase().replace(/\.$/,'').split('.'), parent=p.slice(-2).join('.'), sub=p.slice(0,-2).join('.');
+      tot[parent]=(tot[parent]||0)+1; if(['TXT','NULL'].includes(r.qtype.toUpperCase()))txt[parent]=(txt[parent]||0)+1;
+      if(sub)(subs[parent]??=new Set()).add(sub)
+    }
+    for(const [parent,s] of Object.entries(subs)){
+      const sus=[...s].filter(x=>x.replace(/\./g,'').length>=20&&entropy(x)>=3.3);
+      if(sus.length>=10)out.push({src:'network',sev:'HIGH',type:'DNS tunneling',entity:parent,mitre:'T1071.004',detail:`${sus.length} long, high-entropy subdomains, e.g. ${sus[0].slice(0,28)}…`});
+      else if((txt[parent]||0)>=10&&txt[parent]/tot[parent]>0.8)out.push({src:'network',sev:'MEDIUM',type:'DNS TXT abuse',entity:parent,mitre:'T1071.004',detail:`${txt[parent]} of ${tot[parent]} queries are TXT`})
+    }
+  }
+  return out
+}
+
+const WEB_RE=/^(\S+) \S+ \S+ \[[^\]]+\] "([A-Z]+) (\S+) [^"]*" (\d{3}) \S+ "[^"]*" "([^"]*)"/;
+const WEB_RULES=[
+ ['SQL injection','T1190','HIGH',/(union\s+select|or\s+1\s*=\s*1|'\s*or\s*'|sleep\(\d|information_schema|--\s|;\s*drop\s+table)/i],
+ ['Cross-site scripting','T1189','MEDIUM',/(<script|javascript:|onerror\s*=|onload\s*=|<img[^>]+src)/i],
+ ['Path traversal','T1083','MEDIUM',/(\.\.\/|\.\.\\|\/etc\/passwd|boot\.ini|win\.ini)/i],
+ ['Command injection','T1059','HIGH',/(;|\|\||&&|\|)\s*(cat|ls|id|whoami|wget|curl|nc|bash|sh)\b/i]];
+const SCANNER=/(sqlmap|nikto|nmap|masscan|dirbuster|gobuster|wfuzz|acunetix|nessus|zgrab)/i;
+const dec=s=>{const d=x=>{try{return decodeURIComponent(x.replace(/\+/g,' '))}catch{return x}};return d(d(s))};
+function analyzeWeb(text){
+  const hits={},nf={};
+  const add=(ip,t,m,sev,ex)=>{const k=ip+'|'+t;(hits[k]??={ip,t,m,sev,n:0,ex}).n++};
+  for(const line of text.split(/\r?\n/)){
+    const m=WEB_RE.exec(line); if(!m)continue;
+    const [,ip,,path,status,ua]=m, p=dec(path);
+    for(const [t,mi,sev,rx] of WEB_RULES) if(rx.test(p))add(ip,t,mi,sev,p.slice(0,80));
+    if(SCANNER.test(ua))add(ip,'Scanner user-agent','T1595','MEDIUM',ua);
+    if(status==='404')nf[ip]=(nf[ip]||0)+1
+  }
+  for(const [ip,n] of Object.entries(nf)) if(n>=20)add(ip,'Directory scanning (404s)','T1595.003','MEDIUM',`${n} not-found responses`);
+  return Object.values(hits).map(h=>({src:'web',sev:h.sev,type:h.t,entity:h.ip,mitre:h.m,detail:`${h.n} request${h.n>1?'s':''}, e.g. ${h.ex}`}))
+}
+
+function analyzeWindows(text){
+  const ev=text.split(/\r?\n/).filter(l=>l.trim()).map(l=>JSON.parse(l)).sort((a,b)=>new Date(a.TimeCreated)-new Date(b.TimeCreated));
+  const T=e=>new Date(e.TimeCreated).getTime(), base=p=>(p||'').replace(/\//g,'\\').split('\\').pop().toLowerCase();
+  const fails={},created={},out=[];
+  const hit=(e,sev,type,mitre,detail)=>out.push({src:'windows',sev,type,entity:e.entity,mitre,detail,time:e.TimeCreated.slice(11,19)});
+  for(const e of ev){
+    const id=e.EventID;
+    if(id===4625)(fails[e.IpAddress]??=[]).push(T(e));
+    else if(id===4624&&[3,10].includes(e.LogonType)){
+      const r=(fails[e.IpAddress]||[]).filter(x=>T(e)-x<=600000);
+      if(r.length>=5)hit({...e,entity:`${e.TargetUserName} ← ${e.IpAddress}`},'HIGH','Brute force succeeded','T1110 / T1078',`${r.length} failed logons, then a successful one`)
+    }else if(id===4720)created[e.TargetUserName]=T(e);
+    else if(id===4732&&/administrators/i.test(e.GroupName||'')&&created[e.MemberName]!==undefined&&T(e)-created[e.MemberName]<=3600000)
+      hit({...e,entity:e.MemberName},'HIGH','New account made admin','T1136.001 / T1098','Created and added to Administrators within an hour');
+    else if(id===4688){
+      const par=base(e.ParentProcessName),ch=base(e.NewProcessName),cmd=(e.CommandLine||'').toLowerCase();
+      if(['winword.exe','excel.exe','powerpnt.exe','outlook.exe'].includes(par)&&['cmd.exe','powershell.exe','pwsh.exe','wscript.exe','cscript.exe','mshta.exe'].includes(ch))
+        hit({...e,entity:`${par} → ${ch}`},'HIGH','Office app spawned a shell','T1204.002 / T1059',e.CommandLine||'');
+      if(['powershell.exe','pwsh.exe'].includes(ch)&&(cmd.includes(' -enc')||cmd.includes(' -encodedcommand')))
+        hit({...e,entity:ch},'MEDIUM','Encoded PowerShell','T1059.001',(e.CommandLine||'').slice(0,80))
+    }else if(id===1102||id===104)hit({...e,entity:e.SubjectUserName||'unknown'},'HIGH','Audit log cleared','T1070.001','Security log was cleared')
+  }
+  return out
+}
+
+/* ---------- L1 guidance per finding type ---------- */
+const PLAYBOOK={
+ 'C2 beaconing':['Check what the internal host is and who uses it.','Look up the destination IP/domain in threat intel (do not browse to it).','Search proxy and EDR for the same destination from other hosts.','If the process behind it is unknown, escalate to L2 and isolate the host.'],
+ 'DNS tunneling':['Identify the host making the queries and the parent domain.','Check whether the parent domain is registered recently or has no web presence.','Block the domain at the DNS resolver.','Escalate: data may be leaving the network.'],
+ 'DNS TXT abuse':['Check which application sends so many TXT lookups.','Compare with normal mail/SPF/DKIM activity.','Escalate if the domain is unknown.'],
+ 'SQL injection':['Check the response status and size for the same requests (200 with large size is worse).','Look for the same IP hitting other endpoints.','Block the IP at the WAF and tell the app owner.','Escalate if the data may have been returned.'],
+ 'Cross-site scripting':['Check whether the payload was reflected or stored.','Block the source IP if it repeats.','Report the vulnerable parameter to the app owner.'],
+ 'Path traversal':['Check the response code: 200 on /etc/passwd means file disclosure.','Block the IP and report the vulnerable parameter.','Escalate if any sensitive file was returned.'],
+ 'Command injection':['Check the response and the server for follow-on activity (new processes, outbound connections).','Treat as possible compromise if the request returned 200.','Escalate to L2 and isolate the server.'],
+ 'Scanner user-agent':['Confirm the IP is not an approved vulnerability scanner.','Block it at the edge and keep watching for follow-up attacks.'],
+ 'Directory scanning (404s)':['Confirm it is not a monitoring tool.','Block the IP if it keeps probing.','Check if any request got a 200.'],
+ 'Brute force succeeded':['Treat as a compromised account.','Disable the account and reset credentials.','Review what the account did after the login.','Escalate to L2 now.'],
+ 'New account made admin':['Ask the admin who made the account if it was planned.','If not, disable the account and escalate.','Review other changes by the creating account.'],
+ 'Office app spawned a shell':['Find the document the user opened and its sender.','Isolate the host and escalate.','Search other mailboxes for the same attachment.'],
+ 'Encoded PowerShell':['Decode the Base64 payload to see what it does.','Check the parent process and user.','Escalate if it downloads or runs anything.'],
+ 'Audit log cleared':['Find out who cleared it and whether it was planned.','Treat as an attempt to hide activity and escalate.','Collect logs from the SIEM copy.']};
+const MITRE_NAME={T1071:'Application Layer Protocol','T1071.004':'DNS','T1190':'Exploit Public-Facing App','T1189':'Drive-by Compromise',T1083:'File and Directory Discovery',T1059:'Command and Scripting',T1595:'Active Scanning','T1595.003':'Wordlist Scanning',T1110:'Brute Force',T1078:'Valid Accounts','T1136.001':'Create Local Account',T1098:'Account Manipulation','T1204.002':'Malicious File','T1059.001':'PowerShell','T1070.001':'Clear Windows Event Logs'};
+
+const TACTICS={'Reconnaissance':['T1595','T1595.003'],'Initial Access':['T1190','T1189','T1078'],'Execution':['T1059','T1059.001','T1204.002'],'Persistence':['T1136.001','T1098'],'Defense Evasion':['T1070.001'],'Credential Access':['T1110'],'Discovery':['T1083'],'Command & Control':['T1071','T1071.004']};
+/* ---------- State and views ---------- */
+const SOURCES={
+  network:{label:'Network traffic',file:'conn.csv + dns.csv',hint:'Connection log, then a line “# dns”, then the DNS log. Columns: ts,src,dst,dport,bytes and ts,src,query,qtype.',fn:analyzeNetwork},
+  web:{label:'Web access logs',file:'access.log',hint:'Apache or Nginx combined log format, one request per line.',fn:analyzeWeb},
+  windows:{label:'Windows events',file:'security.jsonl',hint:'One JSON event per line with EventID and TimeCreated.',fn:analyzeWindows}};
+const state={view:'overview',inputs:{...SAMPLES},findings:{},errors:{},selected:null,sev:'ALL',q:'',list:[]};
+const SEVRANK={HIGH:0,MEDIUM:1,LOW:2};
+function run(k){try{state.findings[k]=SOURCES[k].fn(state.inputs[k]);state.errors[k]=''}catch(e){state.findings[k]=[];state.errors[k]='Could not parse input: '+e.message}}
+const all=()=>Object.values(state.findings).flat().sort((a,b)=>SEVRANK[a.sev]-SEVRANK[b.sev]);
+const base=()=>state.view==='overview'?all():(state.findings[state.view]||[]).slice().sort((a,b)=>SEVRANK[a.sev]-SEVRANK[b.sev]);
+const filtered=()=>base().filter(f=>(state.sev==='ALL'||f.sev===state.sev)&&(!state.q||[f.type,f.entity,f.mitre,f.detail,f.src].join(' ').toLowerCase().includes(state.q.toLowerCase())));
+const sevTag=s=>`<span class="sev ${s}"><i></i>${s}</span>`;
+const viewName=()=>state.view==='overview'?'Alert queue':SOURCES[state.view].label;
+
+function nav(){
+  const items=[['overview','Alert queue',all().length],...Object.entries(SOURCES).map(([k,s])=>[k,s.label,(state.findings[k]||[]).length])];
+  $('#nav').innerHTML=items.map(([k,l,n])=>`<button role="tab" data-v="${k}" aria-selected="${state.view===k}"><span>${l}</span><span class="count">${n}</span></button>`).join('');
+  $('#crumb').textContent=viewName();
+}
+function queueHTML(list,showSrc,anim){
+  if(!list.length)return '<div class="empty">No alerts match. Clear the filter or load a different log.</div>';
+  return `<div class="tablewrap ${anim?'anim':''}"><table><thead><tr><th>Severity</th><th>Alert</th><th>Entity</th><th>MITRE</th>${showSrc?'<th>Source</th>':''}</tr></thead><tbody>${list.map((f,i)=>`<tr class="row" tabindex="0" data-i="${i}" style="--i:${Math.min(i,14)}" aria-selected="${state.selected===f}"><td>${sevTag(f.sev)}</td><td>${esc(f.type)}</td><td class="mono">${esc(f.entity)}</td><td><span class="chip">${esc(f.mitre)}</span></td>${showSrc?`<td class="srcdot">${esc(f.src)}</td>`:''}</tr>`).join('')}</tbody></table></div>`
+}
+function detailHTML(){
+  const f=state.selected;
+  if(!f)return '<div class="empty">Select an alert to see the evidence, the MITRE technique and the L1 next steps.</div>';
+  return `<div class="detail"><div>${sevTag(f.sev)}<h3>${esc(f.type)}</h3></div>
+  <dl><dt>Entity</dt><dd class="mono">${esc(f.entity)}</dd><dt>Evidence</dt><dd class="mono">${esc(f.detail)}</dd><dt>Source</dt><dd>${esc(SOURCES[f.src].label)}</dd>${f.time?`<dt>Time</dt><dd class="mono">${esc(f.time)} UTC</dd>`:''}
+  <dt>MITRE</dt><dd>${f.mitre.split(' / ').map(t=>`<span class="chip">${esc(t)}</span> ${esc(MITRE_NAME[t]||'')}`).join('<br>')}</dd></dl>
+  <div><div class="lbl">L1 next steps</div><ol class="steps">${(PLAYBOOK[f.type]||[]).map(x=>`<li>${esc(x)}</li>`).join('')}</ol></div>
+  <div class="callout">Log text can come from an attacker. It is shown as plain text and never run.</div></div>`
+}
+function filtersHTML(){
+  return `<div class="filters"><div class="seg" role="group" aria-label="Severity">${['ALL','HIGH','MEDIUM'].map(s=>`<button type="button" data-sev="${s}" aria-pressed="${state.sev===s}">${s==='ALL'?'All':s[0]+s.slice(1).toLowerCase()}</button>`).join('')}</div><input class="search" id="q" type="search" placeholder="Filter by alert, IP, host or technique" value="${esc(state.q)}" aria-label="Filter alerts"></div>`
+}
+function donutHTML(L){
+  const c={HIGH:0,MEDIUM:0,LOW:0};L.forEach(f=>c[f.sev]++);
+  const col={HIGH:'var(--crit)',MEDIUM:'var(--warn)',LOW:'var(--info)'};
+  let cum=0;const total=L.length||1;
+  const segs=Object.entries(c).filter(([,n])=>n).map(([s,n])=>{const p=n/total*100;const el=`<circle class="seg1" cx="64" cy="64" r="54" pathLength="100" stroke="${col[s]}" stroke-dasharray="0 100" data-len="${Math.max(p-1.2,0.5)}" stroke-dashoffset="${-cum}"/>`;cum+=p;return el}).join('');
+  return `<div class="donutbox"><div class="donut"><svg viewBox="0 0 128 128"><circle cx="64" cy="64" r="54" pathLength="100" stroke="var(--line)"/>${segs}</svg><div class="mid"><b data-count="${L.length}">0</b><span>alerts</span></div></div>
+  <div class="legend">${Object.entries(c).map(([s,n])=>`<div><i style="background:${col[s]}"></i>${s[0]+s.slice(1).toLowerCase()}<b>${n}</b></div>`).join('')}</div></div>`
+}
+function matrixHTML(L){
+  const found={};L.forEach(f=>f.mitre.split(' / ').forEach(t=>{const o=found[t]??={n:0,sev:'MEDIUM'};o.n++;if(f.sev==='HIGH')o.sev='HIGH'}));
+  let i=0;
+  return `<div class="matrix">${Object.entries(TACTICS).map(([tac,ts])=>`<div class="tac"><h4>${esc(tac)}</h4>${ts.map(t=>{const o=found[t];return `<div class="tech ${o?'on '+o.sev:''}" ${o?`style="--i:${i++}"`:''}><b>${t}${o?` · ${o.n}`:''}</b>${esc(MITRE_NAME[t])}</div>`}).join('')}</div>`).join('')}</div>`
+}
+function panelQueue(showSrc,title){
+  return `<div class="panel" id="qpanel"><span class="scanbar"></span><h2>${title}<span class="note" id="qcount"></span></h2>${filtersHTML()}<div id="queue"></div></div>`
+}
+function overview(){
+  const L=all(),h=L.filter(x=>x.sev==='HIGH').length,m=L.filter(x=>x.sev==='MEDIUM').length,ent=new Set(L.map(f=>f.entity)).size;
+  return `<div class="view" style="display:flex;flex-direction:column;gap:18px"><div><h1>Alert queue</h1><p class="sub">Findings from network, web and Windows logs, ranked by severity. Lab sample data is loaded. Paste your own logs on each source page.</p></div>
+  <section class="kpis"><div class="kpi"><small>Open alerts</small><strong data-count="${L.length}">0</strong></div><div class="kpi crit"><small>High</small><strong data-count="${h}">0</strong></div><div class="kpi warn"><small>Medium</small><strong data-count="${m}">0</strong></div><div class="kpi"><small>Entities</small><strong data-count="${ent}">0</strong></div></section>
+  <div class="grid2"><div class="col">${panelQueue(true,'Triage queue')}<div class="panel"><h2>MITRE ATT&amp;CK coverage<span class="note">lit cells fired on this data</span></h2>${matrixHTML(L)}</div></div>
+  <div class="col"><div class="panel"><h2>Alert detail</h2><div id="detail"></div></div><div class="panel"><h2>Severity mix</h2>${donutHTML(L)}</div></div></div></div>`
+}
+function source(k){
+  const S=SOURCES[k];
+  return `<div class="view" style="display:flex;flex-direction:column;gap:18px"><div><h1>${S.label}</h1><p class="sub">${S.hint}</p></div>
+  <div class="grid2"><div class="col">${panelQueue(false,'Findings')}
+   <div class="panel"><h2>Input<span class="note mono">${esc(S.file)}</span></h2><div class="editor"><label for="in-${k}" class="note">Paste log text or choose a file</label>
+     <textarea id="in-${k}" spellcheck="false">${esc(state.inputs[k])}</textarea>
+     <div class="btns"><button class="btn primary" id="analyze" type="button">Analyze</button><button class="btn" id="sample" type="button">Load sample</button><button class="btn" id="clear" type="button">Clear</button><input id="file" type="file" aria-label="Choose a log file" style="max-width:100%"></div></div></div></div>
+   <div class="col"><div class="panel"><h2>Alert detail</h2><div id="detail"></div></div></div></div></div>`
+}
+function refreshQueue(anim){
+  state.list=filtered();
+  const k=state.view,err=k!=='overview'&&state.errors[k];
+  $('#queue').innerHTML=err?`<div class="editor"><span class="err">${esc(err)}</span></div>`:queueHTML(state.list,k==='overview',anim);
+  $('#qcount').textContent=`${state.list.length} of ${base().length}`;
+}
+function countUps(){
+  document.querySelectorAll('[data-count]').forEach(el=>{
+    const to=+el.dataset.count;if(REDUCED||!to){el.textContent=to;return}
+    const t0=performance.now(),d=750;
+    const step=t=>{const p=Math.min((t-t0)/d,1);el.textContent=Math.round(to*(1-Math.pow(1-p,3)));if(p<1)requestAnimationFrame(step)};requestAnimationFrame(step)
+  })
+}
+function render(){
+  nav();
+  $('#main').innerHTML=state.view==='overview'?overview():source(state.view);
+  $('#detail').innerHTML=detailHTML();
+  refreshQueue(true);countUps();
+  requestAnimationFrame(()=>requestAnimationFrame(()=>document.querySelectorAll('.donut .seg1').forEach(c=>c.setAttribute('stroke-dasharray',c.dataset.len+' 100'))));
+}
+function select(i){
+  state.selected=state.list[i];
+  $('#detail').innerHTML=detailHTML();
+  document.querySelectorAll('tr.row').forEach((r,j)=>r.setAttribute('aria-selected',j===i));
+  if(matchMedia('(max-width:900px)').matches)$('#detail').scrollIntoView({block:'nearest',behavior:REDUCED?'auto':'smooth'});
+}
+function analyze(k,text){
+  const panel=$('#qpanel');panel.classList.add('scanning');
+  setTimeout(()=>{state.inputs[k]=text;run(k);state.selected=null;render()},REDUCED?0:700);
+}
+document.addEventListener('click',e=>{
+  const nb=e.target.closest('#nav button');if(nb){state.view=nb.dataset.v;state.selected=null;state.sev='ALL';state.q='';render();return}
+  const row=e.target.closest('tr.row');if(row){select(+row.dataset.i);return}
+  const sv=e.target.closest('[data-sev]');if(sv){state.sev=sv.dataset.sev;document.querySelectorAll('[data-sev]').forEach(b=>b.setAttribute('aria-pressed',b===sv));refreshQueue(false);return}
+  const k=state.view;
+  if(e.target.id==='analyze')analyze(k,$('#in-'+k).value);
+  if(e.target.id==='sample'){$('#in-'+k).value=SAMPLES[k];analyze(k,SAMPLES[k])}
+  if(e.target.id==='clear'){$('#in-'+k).value='';analyze(k,'')}
+});
+document.addEventListener('input',e=>{if(e.target.id==='q'){state.q=e.target.value;refreshQueue(false)}});
+document.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.matches('tr.row'))e.target.click()});
+document.addEventListener('change',e=>{
+  if(e.target.id!=='file')return;const fl=e.target.files[0];if(!fl)return;
+  const r=new FileReader();r.onload=()=>{const k=state.view,t=String(r.result).slice(0,2000000);$('#in-'+k).value=t;analyze(k,t)};r.readAsText(fl)
+});
+$('#themebtn').addEventListener('click',()=>{
+  const d=document.documentElement,dark=d.dataset.theme?d.dataset.theme==='dark':matchMedia('(prefers-color-scheme:dark)').matches;
+  d.dataset.theme=dark?'light':'dark'
+});
+const tick=()=>{$('#clock').textContent=new Date().toISOString().slice(11,19)+' UTC'};tick();setInterval(tick,1000);
+Object.keys(SOURCES).forEach(run);
+render();
+</script>

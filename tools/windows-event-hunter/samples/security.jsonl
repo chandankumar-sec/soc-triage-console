@@ -1,0 +1,17 @@
+{"EventID": 4624, "TimeCreated": "2026-10-03T08:00:00", "TargetUserName": "alice", "IpAddress": "192.0.2.10", "LogonType": 2}
+{"EventID": 4625, "TimeCreated": "2026-10-03T08:30:00", "TargetUserName": "bob", "IpAddress": "192.0.2.20", "LogonType": 3}
+{"EventID": 4625, "TimeCreated": "2026-10-03T09:00:00", "TargetUserName": "administrator", "IpAddress": "203.0.113.5", "LogonType": 3}
+{"EventID": 4625, "TimeCreated": "2026-10-03T09:00:03", "TargetUserName": "administrator", "IpAddress": "203.0.113.5", "LogonType": 3}
+{"EventID": 4625, "TimeCreated": "2026-10-03T09:00:06", "TargetUserName": "administrator", "IpAddress": "203.0.113.5", "LogonType": 3}
+{"EventID": 4625, "TimeCreated": "2026-10-03T09:00:09", "TargetUserName": "administrator", "IpAddress": "203.0.113.5", "LogonType": 3}
+{"EventID": 4625, "TimeCreated": "2026-10-03T09:00:12", "TargetUserName": "administrator", "IpAddress": "203.0.113.5", "LogonType": 3}
+{"EventID": 4625, "TimeCreated": "2026-10-03T09:00:15", "TargetUserName": "administrator", "IpAddress": "203.0.113.5", "LogonType": 3}
+{"EventID": 4625, "TimeCreated": "2026-10-03T09:00:18", "TargetUserName": "administrator", "IpAddress": "203.0.113.5", "LogonType": 3}
+{"EventID": 4625, "TimeCreated": "2026-10-03T09:00:21", "TargetUserName": "administrator", "IpAddress": "203.0.113.5", "LogonType": 3}
+{"EventID": 4624, "TimeCreated": "2026-10-03T09:01:00", "TargetUserName": "administrator", "IpAddress": "203.0.113.5", "LogonType": 3}
+{"EventID": 4720, "TimeCreated": "2026-10-03T09:05:00", "TargetUserName": "svc_backup", "SubjectUserName": "administrator"}
+{"EventID": 4732, "TimeCreated": "2026-10-03T09:06:10", "MemberName": "svc_backup", "GroupName": "Administrators"}
+{"EventID": 4688, "TimeCreated": "2026-10-03T09:10:00", "ParentProcessName": "C:\\Program Files\\Microsoft Office\\winword.exe", "NewProcessName": "C:\\Windows\\System32\\cmd.exe", "CommandLine": "cmd.exe /c whoami"}
+{"EventID": 4688, "TimeCreated": "2026-10-03T09:10:05", "ParentProcessName": "C:\\Windows\\System32\\cmd.exe", "NewProcessName": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe", "CommandLine": "powershell.exe -enc SQBFAFgAIAAoAE4AZQB3AA=="}
+{"EventID": 1102, "TimeCreated": "2026-10-03T09:20:00", "SubjectUserName": "administrator"}
+{"EventID": 4688, "TimeCreated": "2026-10-03T09:25:00", "ParentProcessName": "C:\\Windows\\explorer.exe", "NewProcessName": "C:\\Windows\\notepad.exe", "CommandLine": "notepad.exe"}
