@@ -4,6 +4,19 @@ A small L1 SOC lab: three Python detectors and a browser console that runs the s
 
 All sample data is synthetic (RFC 5737 documentation IPs, `.example` domains). Python tools use only the standard library; `pytest` is needed for tests.
 
+## About
+
+I built this project to practise the day-to-day work of a Level 1 SOC analyst: reading logs, spotting attacks, deciding severity and knowing when to escalate.
+
+It has two parts. Three small Python detectors find attacks in network, web-server and Windows logs. A browser console then collects every alert in one queue, maps it to MITRE ATT&CK, and shows the evidence and the L1 next steps for that alert.
+
+What I wanted to show:
+- I can turn raw logs into clear, explainable detections (no black box, every alert says why it fired).
+- I think about false positives, so each rule has thresholds and a benign case in its tests.
+- I document the way an analyst hands over a case: evidence, technique, action.
+
+Everything runs locally on synthetic data, so it is safe to try.
+
 | Tool | Input | Detects | MITRE |
 |---|---|---|---|
 | [network-beacon-dns](tools/network-beacon-dns) | conn/dns CSV | C2 beaconing, DNS tunneling, TXT abuse | T1071, T1071.004 |
